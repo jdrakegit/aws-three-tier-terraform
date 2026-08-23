@@ -1,47 +1,60 @@
+variable "aws_instance_type" {
+    description = "The instance type for the EC2 instances."
+    type = string
+    default = "t3.micro"
+}
 
 variable "aws_region" {
-  description = "AWS region to deploy into"
-  type        = string
-  default     = "us-east-1"
+    description = "The AWS region to deploy resources in."
+    type = string
+    default = "us-east-1"
 }
-
+// Variable for the VPC CIDR block
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-variable "public_subnet_a_cidr" {
-  description = "CIDR block for public subnet A"
-  type        = string
-  default     = "10.0.1.0/24"
+    description = "The CIDR block for the VPC."
+    type = string
+    default = "10.0.0.0/16"
 }
 
-variable "public_subnet_b_cidr" {
-  description = "CIDR block for public subnet B"
-  type        = string
-  default     = "10.0.2.0/24"
+// Variable for the public subnet CIDR blocks
+variable "public_a_subnet_cidr" {
+    description = "The CIDR block for the public subnet A."
+    type = string
+    default = "10.0.1.0/24"
 }
 
-variable "private_subnet_a_cidr" {
-  description = "CIDR block for private subnet A"
-  type        = string
-  default     = "10.0.3.0/24"
+variable "public_b_subnet_cidr" {
+    description = "The CIDR block for the public subnet B."
+    type = string
+    default = "10.0.2.0/24"
+}
+variable "private_a_subnet_cidr" {
+    description = "The CIDR block for the private subnet A."
+    type = string
+    default = "10.0.3.0/24"
+}
+variable "private_b_subnet_cidr" {
+    description = "The CIDR block for the private subnet B."
+    type = string
+    default = "10.0.4.0/24"
+
 }
 
-variable "private_subnet_b_cidr" {
-  description = "CIDR block for private subnet B"
-  type        = string
-  default     = "10.0.4.0/24"
+// Variable for the RDS instance class
+variable "rds_instance_class" {
+    description = "The instance class for the RDS database."
+    type = string
+    default = "db.t3.micro"
 }
 
-variable "db_username" {
-  description = "Master username for the RDS database"
-  type        = string
-  default     = "admin"
+variable "rds_username" {
+    description = "The username for the RDS database."
+    type = string
+    default = "admin"
+    sensitive = false
 }
-
-variable "db_password" {
-  description = "Master password for the RDS database"
-  type        = string
-  sensitive   = true
+variable "rds_password" {
+    description = "The password for the RDS database."
+    type = string
+    sensitive = true
 }
