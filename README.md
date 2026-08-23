@@ -78,7 +78,3 @@ terraform destroy
 The NAT Gateway and RDS instance are the main things that cost money if left running, so this is meant to be destroyed between sessions, not left up indefinitely.
 
 ---
-
-## What's next
-
-HTTPS through ACM instead of plain HTTP, Multi-AZ RDS for real failover, and eventually a GitHub Actions pipeline that runs plan automatically and waits for approval before applying, similar to what I set up on my AWS Backup System project.
