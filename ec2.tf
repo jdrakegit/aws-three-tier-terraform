@@ -35,7 +35,7 @@ resource "aws_security_group" "ec2" {
 # ec2 launch template for the auto scaling group
 resource "aws_launch_template" "vm" {
   name_prefix   = "instances"
-  image_id      = "data.aws_ami.amazon_linux.id"
+  image_id      = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
   vpc_security_group_ids = [aws_security_group.ec2.id]
   
