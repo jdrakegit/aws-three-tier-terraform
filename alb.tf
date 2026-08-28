@@ -53,12 +53,6 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "vm" {
-  target_group_arn = aws_lb_target_group.main.arn
-  target_id        = aws_autoscaling_group.vm.id
-  port             = 80
-}
-
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
