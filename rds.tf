@@ -29,6 +29,7 @@ resource "aws_security_group" "rds" {
   tags = {
     Name = "project1-rds-sg"
   }
+}
 
 resource "aws_db_instance" "main" {
   identifier             = "project1-db"
