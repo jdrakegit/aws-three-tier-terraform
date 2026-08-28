@@ -1,80 +1,103 @@
 # Three-Tier AWS Web Application (Terraform)
 
-A three-tier AWS setup built entirely in Terraform. Custom VPC, public and private subnets across two AZs, an Application Load Balancer sending traffic to two EC2 web servers, and an RDS MySQL database sitting behind everything else. Nothing but the load balancer touches the internet directly.
+A three-tier AWS setup built with Terraform. VPC with public and private subnets across two Availability Zones, an Application Load Balancer as the only internet-facing component, an Auto Scaling Group of EC2 instances, and an RDS MySQL database.
 
-This is the first project I built straight in Terraform instead of clicking through the console first. The plan going forward is to keep tearing it down and rebuilding it so the syntax and the reasoning actually stick instead of just working once and getting forgotten.
+First Terraform project built from scratch instead of through the AWS console. Plan is to keep tearing it down and rebuilding it to lock in the syntax.
 
----
+**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS
 
-## Why build it this way
+## Architecture Diagram
 
-If a web app's servers and database all sit in one flat network, anything that reaches the internet can eventually reach the database too. Splitting it into tiers means only the load balancer is actually exposed. The servers and the database stay hidden behind it, and each layer only trusts the one directly in front of it.
+Made with Lucidchart.
 
----
+![Architecture Diagram](architecture.png)
 
-## What's in it
-
-- VPC (`10.0.0.0/16`) across `us-east-1a` and `us-east-1b`
-- Public subnets (`10.0.1.0/24`, `10.0.2.0/24`) hold the ALB and NAT Gateway
-- Private subnets (`10.0.3.0/24`, `10.0.4.0/24`) hold the EC2 instances and RDS
-- Internet Gateway for the public side, NAT Gateway so the private side can still reach out for updates without anything reaching in
-- ALB distributing HTTP traffic across two t3.micro EC2 instances, one per AZ
-- RDS MySQL (db.t3.micro), reachable only from the EC2 security group
-
-Security group chain:
+## Security Model
 
 ```
 Internet → ALB (open on port 80)
-ALB → EC2 (only the ALB's security group)
-EC2 → RDS (only the EC2 security group, port 3306)
+ALB → EC2 (only accepts from the ALB's security group)
+EC2 → RDS (only accepts from EC2's security group, port 3306)
 ```
 
-Nothing can skip a step. The database will only talk to EC2. EC2 will only talk to the ALB.
+Each layer only accepts traffic from the layer directly in front of it. Nothing skips a step. In code, that chain looks like this on the EC2 side:
 
----
+```hcl
+ingress {
+  from_port       = 80
+  to_port         = 80
+  protocol        = "tcp"
+  security_groups = [aws_security_group.alb.id]
+}
+```
 
-## How it's organized
+Same pattern on RDS, just pointed at the EC2 security group instead, on port 3306.
 
-Split into separate files instead of one giant `main.tf`: `provider.tf`, `variables.tf`, `vpc.tf`, `ec2.tf`, `alb.tf`, `rds.tf`, `outputs.tf`. The database password lives in a gitignored `terraform.tfvars` file, and the variable itself has no default, so Terraform won't let it silently fall back to something hardcoded.
+## Stack
 
----
+- VPC (`10.0.0.0/16`) across `us-east-1a` / `us-east-1b`
+- Public subnets: ALB, NAT Gateway
+- Private subnets: EC2 (Auto Scaling Group), RDS
+- Internet Gateway for public outbound/inbound, NAT Gateway for private outbound-only
+- Files split by resource: `provider.tf`, `variables.tf`, `vpc.tf`, `ec2.tf`, `alb.tf`, `rds.tf`, `outputs.tf`
+- DB password in a gitignored `terraform.tfvars`, no default set on the variable
 
-## Building the network
+## Notes from the build
 
-Built the VPC and four subnets first. Early on I accidentally nested a `route` block inside the `aws_internet_gateway` resource instead of giving it its own `aws_route_table` — Terraform errored on a missing closing brace, and once I split them apart it worked. Public route table points at the Internet Gateway, private one points at the NAT Gateway, and each subnet gets associated with the right one.
+- Nested a `route` block inside `aws_internet_gateway` instead of giving it its own `aws_route_table`, Terraform threw a missing-brace error until it got split apart
+- NAT Gateway needed an explicit `depends_on` on the Internet Gateway since nothing in its config referenced the IGW directly
+- AMI is pulled dynamically with `data "aws_ami"` and a wildcard filter instead of a hardcoded ID
+- Moved from two hardcoded EC2 instances to a launch template + Auto Scaling Group, ASG registers directly with the target group instead of manual attachments
+- `user_data` failed on first try using `yum`, Amazon Linux 2023 uses `dnf`. Also learned `user_data` only fires on first boot, changing the script does nothing until the instance is replaced
+- `t2.micro` wasn't Free Tier eligible on this account, switched to `t3.micro`
 
-The NAT Gateway also needed an explicit `depends_on` pointing at the Internet Gateway, since nothing in its arguments actually referenced the IGW and Terraform had no other way to know it needed to exist first.
+## Testing
 
----
+`terraform plan` before every apply. Verified target health with `aws elbv2 describe-target-health` instead of trusting the console. Confirmed end-to-end by hitting the ALB's DNS name in a browser.
 
-## EC2 and the load balancer
+## Monitoring
 
-Used a `data "aws_ami"` block with a wildcard (`al2023-ami-*-x86_64`) so it always grabs the current Amazon Linux 2023 image instead of a hardcoded AMI ID that goes stale. Two instances, one per private subnet, both behind a security group that only lets port 80 in from the ALB's security group specifically.
-
-Gave both instances a `user_data` script so they'd actually run a web server instead of sitting there with nothing on port 80. First version used `yum`, and both instances came up unhealthy in the target group with the ALB returning a 502. Turned out Amazon Linux 2023 runs on `dnf`, not `yum`, so the install step never actually ran. Swapped it over, but since `user_data` only fires on first boot, just changing the script didn't do anything until I forced a replace with `terraform apply -replace`. After that both targets went healthy and the ALB actually served a real response.
-
-Also hit a Free Tier error on `t2.micro` — turned out it wasn't eligible on this account, `t3.micro` was, so I switched.
-
----
-
-## Testing it
-
-Ran `terraform plan` before every apply, checked target health directly through `aws elbv2 describe-target-health` instead of trusting the console alone, and confirmed the whole path by loading the ALB's DNS name in a browser and getting a real response back from one of the EC2 instances.
-
----
+CloudWatch alarm on average CPU across the ASG, tied to an SNS topic that emails an alert if usage stays above 70% for two checks in a row.
 
 ## Outputs
 
-`outputs.tf` prints the ALB's DNS name, the RDS endpoint, and the VPC ID after every apply, so there's no need to dig through the console to find them.
+`outputs.tf` prints the ALB DNS name, RDS endpoint, and VPC ID after every apply.
 
----
-
-## Tearing it down
+## Teardown
 
 ```
 terraform destroy
 ```
 
-The NAT Gateway and RDS instance are the main things that cost money if left running, so this is meant to be destroyed between sessions, not left up indefinitely.
+NAT Gateway and RDS are the main cost drivers if left running, so this gets destroyed between sessions.
+
+## Running it yourself
+
+```
+git clone https://github.com/jdrakegit/aws-three-tier-terraform.git
+cd aws-three-tier-terraform
+terraform init
+```
+
+Create a `terraform.tfvars` file with your own database password:
+
+```
+rds_password = "your-password-here"
+```
+
+Then:
+
+```
+terraform plan
+terraform apply
+```
+
+Grab the ALB URL from the output once it's done, and you should get a real response back from one of the EC2 instances behind it.
+
+## What's next
+
+HTTPS through ACM, a CI/CD pipeline with GitHub Actions so a push builds and deploys automatically, and eventually Multi-AZ RDS for real failover instead of a single instance.
 
 ---
+
+Built by [Jordan Drake](https://github.com/jdrakegit) · [LinkedIn](https://www.linkedin.com/in/jordan-drake-a95471397)
