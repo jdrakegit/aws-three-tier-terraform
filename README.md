@@ -4,6 +4,8 @@ A three-tier AWS setup built with Terraform. VPC with public and private subnets
 
 First Terraform project built from scratch instead of through the AWS console. Plan is to keep tearing it down and rebuilding it to lock in the syntax.
 
+**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS
+
 ## Architecture Diagram
 
 Made with Lucidchart.
@@ -18,7 +20,18 @@ ALB → EC2 (only accepts from the ALB's security group)
 EC2 → RDS (only accepts from EC2's security group, port 3306)
 ```
 
-Each layer only accepts traffic from the layer directly in front of it. Nothing skips a step.
+Each layer only accepts traffic from the layer directly in front of it. Nothing skips a step. In code, that chain looks like this on the EC2 side:
+
+```hcl
+ingress {
+  from_port       = 80
+  to_port         = 80
+  protocol        = "tcp"
+  security_groups = [aws_security_group.alb.id]
+}
+```
+
+Same pattern on RDS, just pointed at the EC2 security group instead, on port 3306.
 
 ## Stack
 
@@ -57,3 +70,34 @@ terraform destroy
 ```
 
 NAT Gateway and RDS are the main cost drivers if left running, so this gets destroyed between sessions.
+
+## Running it yourself
+
+```
+git clone https://github.com/jdrakegit/aws-three-tier-terraform.git
+cd aws-three-tier-terraform
+terraform init
+```
+
+Create a `terraform.tfvars` file with your own database password:
+
+```
+rds_password = "your-password-here"
+```
+
+Then:
+
+```
+terraform plan
+terraform apply
+```
+
+Grab the ALB URL from the output once it's done, and you should get a real response back from one of the EC2 instances behind it.
+
+## What's next
+
+HTTPS through ACM, a CI/CD pipeline with GitHub Actions so a push builds and deploys automatically, and eventually Multi-AZ RDS for real failover instead of a single instance.
+
+---
+
+Built by [Jordan Drake](https://github.com/jdrakegit) · [LinkedIn](https://www.linkedin.com/in/jordan-drake-a95471397)
