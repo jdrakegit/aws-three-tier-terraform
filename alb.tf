@@ -53,15 +53,9 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
-resource "aws_lb_target_group_attachment" "vm1" {
+resource "aws_lb_target_group_attachment" "vm" {
   target_group_arn = aws_lb_target_group.main.arn
-  target_id        = aws_instance.vm1.id
-  port             = 80
-}
-
-resource "aws_lb_target_group_attachment" "vm2" {
-  target_group_arn = aws_lb_target_group.main.arn
-  target_id        = aws_instance.vm2.id
+  target_id        = aws_autoscaling_group.vm.id
   port             = 80
 }
 

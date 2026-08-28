@@ -32,42 +32,74 @@ resource "aws_security_group" "ec2" {
   }
 }
 
-resource "aws_instance" "vm1" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.aws_instance_type
-  subnet_id              = aws_subnet.private_a.id
+# ec2 launch template for the auto scaling group
+resource "aws_launch_template" "vm" {
+  name_prefix   = "instances"
+  image_id      = "data.aws_ami.amazon_linux.id"
+  instance_type = "t3.micro"
   vpc_security_group_ids = [aws_security_group.ec2.id]
+  
+  user_data = base64encode(<<-EOF
+            #!/bin/bash
+            dnf update -y
+            dnf install -y httpd
+            systemctl start httpd
+            systemctl enable httpd
 
-  user_data = <<-EOF
-              #!/bin/bash
-              dnf update -y
-              dnf install -y httpd
-              systemctl start httpd
-              systemctl enable httpd
-              echo "<h1>Hello from vm1</h1>" > /var/www/html/index.html
-              EOF
+            cat <<'HTML' > /var/www/html/index.html
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Hello</title>
+              <style>
+                body {
+                  font-family: -apple-system, 'Segoe UI', Arial, sans-serif;
+                  background: #000000;
+                  color: #ffffff;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  justify-content: center;
+                  height: 100vh;
+                  margin: 0;
+                }
+                h1 {
+                  font-size: 48px;
+                  font-weight: 600;
+                  margin: 0;
+                }
+                p {
+                  color: #888888;
+                  font-size: 16px;
+                  margin-top: 12px;
+                }
+              </style>
+            </head>
+            <body>
+              <h1>Hello from the cloud</h1>
+              <p>Three-tier AWS app &middot; built with Terraform</p>
+            </body>
+            </html>
+            HTML
+            EOF
+)
 
-  tags = {
-    Name = "project1-vm1"
-  }
 }
+# Auto scaling group
+resource "aws_autoscaling_group" "vm"{
+  desired_capacity   = 2
+  max_size           = 2
+  min_size           = 2
+  vpc_zone_identifier  = [aws_subnet.private_a.id,aws_subnet.private_b.id]
 
-resource "aws_instance" "vm2" {
-  ami                    = data.aws_ami.amazon_linux.id
-  instance_type          = var.aws_instance_type
-  subnet_id              = aws_subnet.private_b.id
-  vpc_security_group_ids = [aws_security_group.ec2.id]
-
-  user_data = <<-EOF
-              #!/bin/bash
-              dnf update -y
-              dnf install -y httpd
-              systemctl start httpd
-              systemctl enable httpd
-              echo "<h1>Hello from vm2</h1>" > /var/www/html/index.html
-              EOF
-
-  tags = {
-    Name = "project1-vm2"
+  launch_template {
+    id      = aws_launch_template.vm.id
+    version = "$Latest"
   }
+  # every EC2 instance launched by the ASG gets that Name tag
+   tag {
+  key                 = "Name"
+  value               = "auto-scaling-group"
+  propagate_at_launch = true  
+   }
 }
