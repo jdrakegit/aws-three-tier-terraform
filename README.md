@@ -24,9 +24,6 @@ This was my first time actually writing Terraform from scratch instead of clicki
 
 
 
----
-
-
 
 
 ## Why it's split into layers
