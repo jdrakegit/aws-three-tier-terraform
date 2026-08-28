@@ -12,6 +12,12 @@ This was my first time actually writing Terraform from scratch instead of clicki
 
 
 
+
+
+
+
+
+
 ---
 
 
