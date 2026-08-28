@@ -4,6 +4,9 @@ This is a three-tier setup on AWS, built with Terraform. There's a VPC with publ
 
 This was my first time actually writing Terraform from scratch instead of clicking through the AWS console. I'm planning on tearing it down and rebuilding it a few more times over the next few weeks so the syntax actually sticks instead of just working once and me forgetting how I did it.
 
+---
+## AWS Architecture Diagram
+Made with Lucidchart.
 ![Architecture Diagram](architecture.png)
 
 ---
