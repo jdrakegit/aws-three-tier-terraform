@@ -28,7 +28,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
 
-   apply:
+  apply:
     needs: plan
     runs-on: ubuntu-latest
     environment: production
