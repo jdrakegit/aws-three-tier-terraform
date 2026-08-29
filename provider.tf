@@ -6,12 +6,13 @@ terraform {
     }
   }
 
- backend "s3" {
-    bucket = "jdrake-terraform-state-bucket"
-    key    = "project1/terraform.tfstate"
-    region = "us-east-1"
+  backend "s3" {
+    bucket       = "jdrake-terraform-state-bucket"
+    key          = "project1/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
   }
-  }
+}
 
 provider "aws" {
   region = var.aws_region
