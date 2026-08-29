@@ -4,7 +4,7 @@ A three-tier AWS setup built with Terraform. VPC with public and private subnets
 
 First Terraform project built from scratch instead of through the AWS console. Plan is to keep tearing it down and rebuilding it to lock in the syntax.
 
-**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS
+**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS · GitHub Actions
 
 ## Architecture Diagram
 
@@ -41,6 +41,13 @@ Same pattern on RDS, just pointed at the EC2 security group instead, on port 330
 - Internet Gateway for public outbound/inbound, NAT Gateway for private outbound-only
 - Files split by resource: `provider.tf`, `variables.tf`, `vpc.tf`, `ec2.tf`, `alb.tf`, `rds.tf`, `outputs.tf`
 - DB password in a gitignored `terraform.tfvars`, no default set on the variable
+- State stored remotely in S3 with locking enabled, instead of a local state file
+
+## CI/CD
+
+A GitHub Actions pipeline runs on every push to `main`: `terraform plan` runs automatically, then `terraform apply` waits for manual approval through a protected GitHub Environment before touching real infrastructure.
+
+Getting this working exposed a real problem: my local machine and GitHub Actions were each keeping their own separate state file, so every pipeline run had no memory of what had already been built. It kept trying to create the same resources from scratch, which caused duplicate VPCs, load balancers, and databases to pile up in the account. I traced it back to the missing shared state, cleaned up the duplicates by hand through the console, then moved state into an S3 bucket with `use_lockfile = true` so both environments read and write the same file and can't run concurrently against it.
 
 ## Notes from the build
 
@@ -50,10 +57,11 @@ Same pattern on RDS, just pointed at the EC2 security group instead, on port 330
 - Moved from two hardcoded EC2 instances to a launch template + Auto Scaling Group, ASG registers directly with the target group instead of manual attachments
 - `user_data` failed on first try using `yum`, Amazon Linux 2023 uses `dnf`. Also learned `user_data` only fires on first boot, changing the script does nothing until the instance is replaced
 - `t2.micro` wasn't Free Tier eligible on this account, switched to `t3.micro`
+- Two pipeline runs executed at the same time with no state lock in place, each unaware of the other, which is what caused the duplicate resources described above
 
 ## Testing
 
-`terraform plan` before every apply. Verified target health with `aws elbv2 describe-target-health` instead of trusting the console. Confirmed end-to-end by hitting the ALB's DNS name in a browser.
+`terraform plan` before every apply. Verified target health with `aws elbv2 describe-target-health` instead of trusting the console. Confirmed end-to-end by hitting the ALB's DNS name in a browser, both from a local apply and from the deployed pipeline.
 
 ## Monitoring
 
@@ -69,7 +77,7 @@ CloudWatch alarm on average CPU across the ASG, tied to an SNS topic that emails
 terraform destroy
 ```
 
-NAT Gateway and RDS are the main cost drivers if left running, so this gets destroyed between sessions.
+The NAT Gateway and RDS are the main cost drivers if left running, so this gets destroyed between sessions.
 
 ## Running it yourself
 
@@ -94,9 +102,11 @@ terraform apply
 
 Grab the ALB URL from the output once it's done, and you should get a real response back from one of the EC2 instances behind it.
 
+If you want to use the GitHub Actions pipeline instead of applying locally, you'll need your own S3 bucket for state and your own `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `RDS_PASSWORD` set as repository secrets.
+
 ## What's next
 
-HTTPS through ACM, a CI/CD pipeline with GitHub Actions so a push builds and deploys automatically, and eventually Multi-AZ RDS for real failover instead of a single instance.
+HTTPS through ACM, and eventually Multi-AZ RDS for real failover instead of a single instance.
 
 ---
 
