@@ -111,7 +111,3 @@ HTTPS through ACM, and eventually Multi-AZ RDS so there's actual failover instea
 ---
 
 Built by [Jordan Drake](https://github.com/jdrakegit) · [LinkedIn](https://www.linkedin.com/in/jordan-drake-a95471397)
-
----
-
-Built by [Jordan Drake](https://github.com/jdrakegit) · [LinkedIn](https://www.linkedin.com/in/jordan-drake-a95471397)
