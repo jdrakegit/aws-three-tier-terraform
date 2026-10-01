@@ -1,10 +1,10 @@
 # Three-Tier AWS Web Application (Terraform)
 
-A three-tier AWS setup built with Terraform. VPC with public and private subnets across two Availability Zones, an Application Load Balancer as the only internet-facing component, an Auto Scaling Group of EC2 instances, and an RDS MySQL database.
+A three-tier setup on AWS, built with Terraform. VPC with public and private subnets across two Availability Zones, an Application Load Balancer as the only internet-facing component, an Auto Scaling Group of EC2 instances, and an RDS MySQL database.
 
-First Terraform project built from scratch instead of through the AWS console. Plan is to keep tearing it down and rebuilding it to lock in the syntax.
+First Terraform project I built from scratch instead of just clicking through the AWS console. Plan is to keep tearing it down and rebuilding it so the syntax actually sticks.
 
-**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS
+**Stack:** Terraform · AWS VPC · EC2 · Auto Scaling · ALB · RDS (MySQL) · CloudWatch · SNS · GitHub Actions
 
 ## Architecture Diagram
 
@@ -20,9 +20,9 @@ ALB → EC2 (only accepts from the ALB's security group)
 EC2 → RDS (only accepts from EC2's security group, port 3306)
 ```
 
-Each layer only accepts traffic from the layer directly in front of it. Nothing skips a step. In code, that chain looks like this on the EC2 side:
+Each layer only takes traffic from the layer right in front of it. Nothing skips a step. On the EC2 side it looks like this:
 
-```hcl
+```
 ingress {
   from_port       = 80
   to_port         = 80
@@ -31,45 +31,53 @@ ingress {
 }
 ```
 
-Same pattern on RDS, just pointed at the EC2 security group instead, on port 3306.
+Same idea on RDS, just pointed at the EC2 security group instead, on port 3306.
 
 ## Stack
 
 - VPC (`10.0.0.0/16`) across `us-east-1a` / `us-east-1b`
 - Public subnets: ALB, NAT Gateway
 - Private subnets: EC2 (Auto Scaling Group), RDS
-- Internet Gateway for public outbound/inbound, NAT Gateway for private outbound-only
-- Files split by resource: `provider.tf`, `variables.tf`, `vpc.tf`, `ec2.tf`, `alb.tf`, `rds.tf`, `outputs.tf`
-- DB password in a gitignored `terraform.tfvars`, no default set on the variable
+- Internet Gateway for public traffic, NAT Gateway so the private side can still reach out
+- Split into files by resource: `provider.tf`, `variables.tf`, `vpc.tf`, `ec2.tf`, `alb.tf`, `rds.tf`, `outputs.tf`
+- DB password lives in a gitignored `terraform.tfvars`, no default on that variable
+- State is in S3 with locking on, not a local state file
 
-## Notes from the build
+## CI/CD
 
-- Nested a `route` block inside `aws_internet_gateway` instead of giving it its own `aws_route_table`, Terraform threw a missing-brace error until it got split apart
-- NAT Gateway needed an explicit `depends_on` on the Internet Gateway since nothing in its config referenced the IGW directly
-- AMI is pulled dynamically with `data "aws_ami"` and a wildcard filter instead of a hardcoded ID
-- Moved from two hardcoded EC2 instances to a launch template + Auto Scaling Group, ASG registers directly with the target group instead of manual attachments
-- `user_data` failed on first try using `yum`, Amazon Linux 2023 uses `dnf`. Also learned `user_data` only fires on first boot, changing the script does nothing until the instance is replaced
-- `t2.micro` wasn't Free Tier eligible on this account, switched to `t3.micro`
+GitHub Actions runs on every push to `main`. `terraform plan` runs automatically, then `terraform apply` waits on manual approval through a protected environment before it touches anything real.
+
+Setting this up is actually where I ran into the hardest problem of the whole project. My laptop and GitHub Actions were each keeping their own state file, so neither one knew what the other had already built. Every run started from scratch and tried to recreate everything, which meant duplicate VPCs, load balancers, even a duplicate database showing up in my account. Fixed it by moving state into S3 with `use_lockfile = true` so both sides read and write the same file and can't step on each other, but I had to manually clean up the duplicates first.
+
+## Notes from building it
+
+- Accidentally nested a `route` block inside `aws_internet_gateway` instead of giving it its own `aws_route_table`. Terraform just errored about a missing brace until I split them apart.
+- NAT Gateway needed a `depends_on` pointing at the Internet Gateway since nothing in its config actually referenced it directly.
+- AMI gets pulled dynamically with `data "aws_ami"` and a wildcard filter instead of hardcoding an ID that goes stale.
+- Started with two hardcoded EC2 instances, switched to a launch template + Auto Scaling Group. The ASG registers with the target group directly instead of a manual attachment.
+- `user_data` failed the first time because I used `yum`, but Amazon Linux 2023 uses `dnf`. Also learned `user_data` only runs on first boot, so changing the script does nothing to an instance that already exists, it has to actually get replaced.
+- `t2.micro` isn't Free Tier eligible on this account, had to switch to `t3.micro`.
+- Two pipeline runs went at the same time with no lock in place, which is what caused the duplicate resources mentioned above.
 
 ## Testing
 
-`terraform plan` before every apply. Verified target health with `aws elbv2 describe-target-health` instead of trusting the console. Confirmed end-to-end by hitting the ALB's DNS name in a browser.
+`terraform plan` before every apply. Checked target health with `aws elbv2 describe-target-health` instead of just trusting the console. Confirmed it actually worked by hitting the ALB's DNS name in a browser, both locally and through the pipeline.
 
 ## Monitoring
 
-CloudWatch alarm on average CPU across the ASG, tied to an SNS topic that emails an alert if usage stays above 70% for two checks in a row.
+CloudWatch alarm watching average CPU on the ASG, tied to an SNS topic that emails me if it stays above 70% for two checks in a row.
 
 ## Outputs
 
-`outputs.tf` prints the ALB DNS name, RDS endpoint, and VPC ID after every apply.
+`outputs.tf` prints the ALB DNS name, RDS endpoint, and VPC ID after every apply so I'm not digging through the console for them.
 
-## Teardown
+## Tearing it down
 
 ```
 terraform destroy
 ```
 
-NAT Gateway and RDS are the main cost drivers if left running, so this gets destroyed between sessions.
+NAT Gateway and RDS are the main things that cost money if left running, so this gets destroyed between sessions.
 
 ## Running it yourself
 
@@ -79,7 +87,7 @@ cd aws-three-tier-terraform
 terraform init
 ```
 
-Create a `terraform.tfvars` file with your own database password:
+Make a `terraform.tfvars` file with your own password:
 
 ```
 rds_password = "your-password-here"
@@ -92,11 +100,13 @@ terraform plan
 terraform apply
 ```
 
-Grab the ALB URL from the output once it's done, and you should get a real response back from one of the EC2 instances behind it.
+Grab the ALB URL from the output once it's done and you should get a real response back from one of the instances.
+
+If you want to use the GitHub Actions pipeline instead of applying locally, you'll need your own S3 bucket for state and your own `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `RDS_PASSWORD` set as repo secrets.
 
 ## What's next
 
-HTTPS through ACM, a CI/CD pipeline with GitHub Actions so a push builds and deploys automatically, and eventually Multi-AZ RDS for real failover instead of a single instance.
+HTTPS through ACM, and eventually Multi-AZ RDS so there's actual failover instead of a single instance.
 
 ---
 
