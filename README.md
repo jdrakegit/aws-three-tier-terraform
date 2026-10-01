@@ -58,6 +58,7 @@ Setting this up is actually where I ran into the hardest problem of the whole pr
 - `user_data` failed the first time because I used `yum`, but Amazon Linux 2023 uses `dnf`. Also learned `user_data` only runs on first boot, so changing the script does nothing to an instance that already exists, it has to actually get replaced.
 - `t2.micro` isn't Free Tier eligible on this account, had to switch to `t3.micro`.
 - Two pipeline runs went at the same time with no lock in place, which is what caused the duplicate resources mentioned above.
+- A leftover lock from an old command that didn't finish broke the pipeline until I found and cleared it.
 
 ## Testing
 
